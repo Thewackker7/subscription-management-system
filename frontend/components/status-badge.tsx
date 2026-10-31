@@ -1,0 +1,2 @@
+const colors: Record<string, string> = { ACTIVE: "bg-emerald-100 text-emerald-700", PAID: "bg-emerald-100 text-emerald-700", CONFIRMED: "bg-blue-100 text-blue-700", DRAFT: "bg-slate-100 text-slate-700", QUOTATION: "bg-violet-100 text-violet-700", CLOSED: "bg-slate-200 text-slate-700", CANCELLED: "bg-red-100 text-red-700" };
+export function StatusBadge({ value }: { value: string }) { return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${colors[value] ?? "bg-amber-100 text-amber-700"}`}>{value.replaceAll("_", " ")}</span>; }
