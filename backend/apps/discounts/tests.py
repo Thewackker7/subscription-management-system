@@ -51,3 +51,23 @@ class DiscountTests(APITestCase):
         self.client.post(reverse("billing-generate"), {"subscription_id": self.subscription.id, "as_of": "2026-01-02"}, format="json")
         invoice = Invoice.objects.get()
         self.assertEqual(invoice.discount_total, Decimal("30.00"))
+
+    def test_product_discount_patch_requires_products_when_explicitly_cleared(self):
+        created = self.create_rule(name="Product only", scope="PRODUCT", products=[self.product.id])
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        rule = DiscountRule.objects.get(name="Product only")
+
+        cleared = self.client.patch(reverse("discount-detail", args=[rule.id]), {"products": []}, format="json")
+        self.assertEqual(cleared.status_code, status.HTTP_400_BAD_REQUEST)
+        rule.refresh_from_db()
+        self.assertEqual(list(rule.products.values_list("id", flat=True)), [self.product.id])
+
+        preserved = self.client.patch(reverse("discount-detail", args=[rule.id]), {"name": "Renamed product rule"}, format="json")
+        self.assertEqual(preserved.status_code, status.HTTP_200_OK)
+        rule.refresh_from_db()
+        self.assertEqual(list(rule.products.values_list("id", flat=True)), [self.product.id])
+
+    def test_percentage_discount_above_100_is_serializer_validation_error(self):
+        response = self.create_rule(value="100.01")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("value", response.data)

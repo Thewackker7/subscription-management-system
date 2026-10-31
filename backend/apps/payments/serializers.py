@@ -7,7 +7,6 @@ from .services import record_payment
 
 class PaymentSerializer(serializers.ModelSerializer):
     invoice_number = serializers.CharField(source="invoice.number", read_only=True)
-    balance_after = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
@@ -20,6 +19,3 @@ class PaymentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         invoice = validated_data.pop("invoice")
         return record_payment(invoice_id=invoice.id, **validated_data)
-
-    def get_balance_after(self, payment):
-        return payment.invoice.balance

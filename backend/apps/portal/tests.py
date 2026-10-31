@@ -26,3 +26,19 @@ class PortalTests(APITestCase):
         self.assertEqual(self.client.get(reverse("portal-invoice-detail", args=[self.invoice.id])).status_code, status.HTTP_200_OK)
         self.client.force_authenticate(self.other)
         self.assertEqual(self.client.get(reverse("portal-invoice-detail", args=[self.invoice.id])).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_summary_excludes_draft_invoice_from_outstanding_balance(self):
+        Invoice.objects.create(
+            subscription=self.invoice.subscription,
+            customer=self.customer,
+            customer_email=self.customer.email,
+            billing_period_start=date(2026, 2, 1),
+            billing_period_end=date(2026, 2, 28),
+            due_date=date(2026, 2, 15),
+            total=Decimal("500.00"),
+            status=Invoice.Status.DRAFT,
+        )
+        self.client.force_authenticate(self.customer)
+        response = self.client.get(reverse("portal-summary"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Decimal(response.data["outstanding_balance"]), Decimal("100.00"))

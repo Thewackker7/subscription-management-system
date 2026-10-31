@@ -14,8 +14,9 @@ class PaymentSummaryView(APIView):
     permission_classes = [IsAdminOrStaff]
 
     def get(self, request):
-        invoices = Invoice.objects.exclude(status=Invoice.Status.CANCELLED)
-        outstanding = sum((invoice.balance for invoice in invoices), Decimal("0.00"))
+        invoices = Invoice.objects.all()
+        issued_invoices = invoices.filter(status=Invoice.Status.CONFIRMED)
+        outstanding = sum((invoice.balance for invoice in issued_invoices), Decimal("0.00"))
         return Response({
             "received": Payment.objects.aggregate(value=Sum("amount"))["value"] or Decimal("0.00"),
             "outstanding": outstanding,

@@ -61,7 +61,8 @@ class MyPaymentsView(CustomerPortalMixin, generics.ListAPIView):
 class PortalSummaryView(CustomerPortalMixin, APIView):
     def get(self, request):
         invoices = Invoice.objects.filter(customer=request.user)
-        outstanding = sum((invoice.balance for invoice in invoices.exclude(status=Invoice.Status.CANCELLED)), 0)
+        issued_invoices = invoices.filter(status=Invoice.Status.CONFIRMED)
+        outstanding = sum((invoice.balance for invoice in issued_invoices), 0)
         return Response({"active_subscriptions": Subscription.objects.filter(customer=request.user, status=Subscription.Status.ACTIVE).count(),
                          "outstanding_balance": outstanding,
                          "paid_invoice_count": invoices.filter(status=Invoice.Status.PAID).count(),

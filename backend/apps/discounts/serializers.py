@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from .models import DiscountApplication, DiscountRule
 
@@ -10,9 +12,17 @@ class DiscountRuleSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         scope = attrs.get("scope", getattr(self.instance, "scope", None))
+        products_were_supplied = "products" in attrs
         products = attrs.get("products")
-        if scope == DiscountRule.Scope.PRODUCT and not products and not (self.instance and self.instance.products.exists()):
-            raise serializers.ValidationError({"products": "Product-scoped discounts require at least one product."})
+        if scope == DiscountRule.Scope.PRODUCT:
+            if products_were_supplied and not products:
+                raise serializers.ValidationError({"products": "Product-scoped discounts require at least one product."})
+            if not products_were_supplied and not (self.instance and self.instance.products.exists()):
+                raise serializers.ValidationError({"products": "Product-scoped discounts require at least one product."})
+        discount_type = attrs.get("discount_type", getattr(self.instance, "discount_type", None))
+        value = attrs.get("value", getattr(self.instance, "value", None))
+        if discount_type == DiscountRule.DiscountType.PERCENTAGE and value is not None and value > Decimal("100.00"):
+            raise serializers.ValidationError({"value": "Percentage discounts cannot exceed 100%."})
         starts_on = attrs.get("starts_on", getattr(self.instance, "starts_on", None))
         ends_on = attrs.get("ends_on", getattr(self.instance, "ends_on", None))
         if starts_on and ends_on and ends_on < starts_on:

@@ -20,8 +20,15 @@ def record_payment(*, invoice_id, method, amount, payment_date, note="", externa
         external_reference = None
     try:
         with transaction.atomic():
-            payment = Payment.objects.create(invoice=invoice, method=method, amount=amount, payment_date=payment_date,
-                                             note=note, external_reference=external_reference)
+            payment = Payment.objects.create(
+                invoice=invoice,
+                method=method,
+                amount=amount,
+                balance_after=money(invoice.balance - amount),
+                payment_date=payment_date,
+                note=note,
+                external_reference=external_reference,
+            )
     except IntegrityError as exc:
         raise ValidationError({"external_reference": "This external reference has already been recorded."}) from exc
     invoice.amount_paid = money(invoice.amount_paid + amount)

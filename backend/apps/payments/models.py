@@ -25,6 +25,9 @@ class Payment(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="payments")
     method = models.CharField(max_length=20, choices=Method.choices)
     amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    # This is captured when the payment is accepted.  The invoice balance is
+    # mutable, so deriving this value from it later would rewrite history.
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"), editable=False)
     payment_date = models.DateField(default=timezone.localdate, db_index=True)
     note = models.TextField(blank=True)
     external_reference = models.CharField(max_length=150, null=True, blank=True)
