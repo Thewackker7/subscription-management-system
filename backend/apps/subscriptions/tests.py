@@ -68,3 +68,47 @@ class SubscriptionWorkflowTests(APITestCase):
         self.assertEqual(conversion.status_code, status.HTTP_201_CREATED)
         repeat = self.client.post(convert_url, {"start_date": "2026-01-01", "expiry_date": "2026-12-31"}, format="json")
         self.assertEqual(repeat.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_subscription_patch_replaces_draft_lines_and_rejects_invalid_lines(self):
+        created = self.client.post(reverse("subscription-list"), self.payload(), format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        subscription_id = created.data["id"]
+
+        update = self.client.patch(reverse("subscription-detail", args=[subscription_id]), {
+            "lines": [{"product": self.product.id, "quantity": 3, "tax_rule": self.tax.id}],
+        }, format="json")
+        self.assertEqual(update.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(update.data["lines"]), 1)
+        self.assertEqual(update.data["lines"][0]["quantity"], 3)
+        self.assertEqual(update.data["lines"][0]["unit_price"], "100.00")
+
+        invalid = self.client.patch(reverse("subscription-detail", args=[subscription_id]), {
+            "lines": [{"product": self.product.id, "quantity": 1, "tax_rule": self.tax.id}],
+        }, format="json")
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Subscription.objects.get(pk=subscription_id).lines.get().quantity, 3)
+
+    def test_template_and_quotation_patch_replace_lines_safely(self):
+        template = self.client.post(reverse("quotation-template-list"), {
+            "name": "Editable template", "plan": self.plan.id, "validity_days": 30,
+            "lines": [{"product": self.product.id, "variant": self.variant.id, "quantity": 2, "tax_rule": self.tax.id}],
+        }, format="json")
+        self.assertEqual(template.status_code, status.HTTP_201_CREATED)
+        template_update = self.client.patch(reverse("quotation-template-detail", args=[template.data["id"]]), {
+            "lines": [{"product": self.product.id, "quantity": 3, "tax_rule": self.tax.id}],
+        }, format="json")
+        self.assertEqual(template_update.status_code, status.HTTP_200_OK)
+        self.assertEqual(template_update.data["lines"][0]["quantity"], 3)
+
+        quotation = self.client.post(reverse("quotation-list"), {
+            "customer": self.customer.id, "plan": self.plan.id, "valid_until": "2099-01-01",
+            "lines": [{"product": self.product.id, "quantity": 2, "tax_rule": self.tax.id}],
+        }, format="json")
+        self.assertEqual(quotation.status_code, status.HTTP_201_CREATED)
+        quote_update = self.client.patch(reverse("quotation-detail", args=[quotation.data["id"]]), {
+            "lines": [{"product": self.product.id, "variant": self.variant.id, "quantity": 2, "tax_rule": self.tax.id}],
+        }, format="json")
+        self.assertEqual(quote_update.status_code, status.HTTP_200_OK)
+        self.assertEqual(quote_update.data["lines"][0]["unit_price"], "150.00")
+        empty_lines = self.client.patch(reverse("quotation-detail", args=[quotation.data["id"]]), {"lines": []}, format="json")
+        self.assertEqual(empty_lines.status_code, status.HTTP_400_BAD_REQUEST)

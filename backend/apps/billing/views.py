@@ -46,8 +46,9 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError(exc.message_dict)
         return Response(self.get_serializer(invoice).data)
 
-    @action(detail=True, methods=["post"])
-    def send(self, request, pk=None):
+    @action(detail=True, methods=["post"], url_path="send", url_name="send")
+    def mark_sent(self, request, pk=None):
+        """Record send intent only; email delivery belongs to a separate configured service."""
         invoice = self.get_object()
         if invoice.status == Invoice.Status.DRAFT:
             invoice.confirm()
@@ -55,7 +56,7 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError({"detail": "Only confirmed invoices can be marked sent."})
         invoice.sent_at = timezone.now()
         invoice.save(update_fields=["sent_at"])
-        return Response(self.get_serializer(invoice).data)
+        return Response({"detail": "Invoice marked as sent. No email delivery was attempted.", "invoice": self.get_serializer(invoice).data})
 
     @action(detail=True, methods=["get"])
     def print_ready(self, request, pk=None):

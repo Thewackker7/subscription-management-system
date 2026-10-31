@@ -118,7 +118,7 @@ The conversion call returns `201` with the new subscription, returns `400` for e
 | `POST` | `/billing/generate/` | Admin/Staff | Generate invoice(s) due on or before `as_of` |
 | `GET` | `/billing/invoices/` | Authenticated | Staff/Admin all invoices; customers only their own |
 | `GET` | `/billing/invoices/{id}/` | Owner/Admin/Staff | Invoice with immutable line snapshots |
-| `POST` | `/billing/invoices/{id}/confirm/`, `/cancel/`, `/send/` | Admin/Staff | Safe invoice actions |
+| `POST` | `/billing/invoices/{id}/confirm/`, `/cancel/`, `/send/` | Admin/Staff | Confirm/cancel or record a send marker; `/send/` does not deliver email |
 | `GET` | `/billing/invoices/{id}/print_ready/` | Admin/Staff | Print-ready invoice JSON |
 
 Generate a specific subscription or all due subscriptions:
@@ -129,7 +129,9 @@ Generate a specific subscription or all due subscriptions:
 
 The response has `generated` and `existing` arrays. Billing supports daily, weekly, monthly and yearly plan intervals; monthly/yearly dates are clamped safely (for example, 31 January plus one month is 28 February). Generation uses an atomic transaction, row locking where supported, and a unique database constraint over subscription and billing-period dates. Retried requests return the existing invoice rather than double-billing.
 
-Invoices start as `DRAFT`; they may become `CONFIRMED`, `PAID` (reserved for Sabareesh’s payment module), or `CANCELLED`. A confirmed invoice can be sent/marked sent. Cancellation is rejected when payment allocation exists. Invoice `amount_paid`, `balance`, and `discount_total` deliberately remain compatible with Sabareesh’s payment/discount ownership.
+Invoices start as `DRAFT`; they may become `CONFIRMED`, `PAID` (reserved for Sabareesh’s payment module), or `CANCELLED`. `POST /billing/invoices/{id}/send/` confirms a draft invoice when needed and records `sent_at`; it does **not** send email or contact an external delivery provider. Its response includes the marker message and the invoice payload. Cancellation is rejected when payment allocation exists. Invoice `amount_paid`, `balance`, and `discount_total` deliberately remain compatible with Sabareesh’s payment/discount ownership.
+
+Nested `lines` supplied to `PATCH` for subscriptions, quotation templates, or quotations replace all current lines atomically. They must contain a non-empty, valid complete replacement. Subscription-line replacement is allowed only while the subscription is `DRAFT` or `QUOTATION`; converted quotation lines cannot be changed. Omit `lines` to update only top-level fields.
 
 ## Current scope and coordination
 

@@ -2,6 +2,8 @@ from datetime import date
 from decimal import Decimal
 
 from django.urls import reverse
+from django.core import mail
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -43,3 +45,16 @@ class BillingTests(APITestCase):
         self.client.force_authenticate(self.customer)
         self.assertEqual(self.client.get(reverse("invoice-detail", args=[invoice.id])).status_code, status.HTTP_200_OK)
         self.assertEqual(self.client.post(reverse("invoice-cancel", args=[invoice.id]), {}, format="json").status_code, status.HTTP_403_FORBIDDEN)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_send_marks_invoice_without_attempting_email_delivery(self):
+        self.client.post(reverse("billing-generate"), {"subscription_id": self.subscription.id, "as_of": "2026-01-31"}, format="json")
+        invoice = Invoice.objects.get()
+        response = self.client.post(reverse("invoice-send", args=[invoice.id]), {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["detail"], "Invoice marked as sent. No email delivery was attempted.")
+        self.assertEqual(response.data["invoice"]["id"], invoice.id)
+        self.assertEqual(len(mail.outbox), 0)
+        invoice.refresh_from_db()
+        self.assertIsNotNone(invoice.sent_at)
+        self.assertEqual(invoice.status, Invoice.Status.CONFIRMED)

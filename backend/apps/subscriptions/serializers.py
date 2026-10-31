@@ -36,7 +36,7 @@ class SubscriptionLineSerializer(PriceLineSerializer):
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
-    lines = SubscriptionLineSerializer(many=True)
+    lines = SubscriptionLineSerializer(many=True, required=False)
     customer_email = serializers.EmailField(source="customer.email", read_only=True)
 
     class Meta:
@@ -50,7 +50,15 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         if start and expiry and expiry < start:
             raise serializers.ValidationError({"expiry_date": "Must be on or after start_date."})
         plan = attrs.get("plan", getattr(self.instance, "plan", None))
-        for line in attrs.get("lines", []):
+        lines = attrs.get("lines")
+        if not self.instance and not lines:
+            raise serializers.ValidationError({"lines": "Provide at least one subscription line."})
+        if self.instance and lines is not None:
+            if self.instance.status not in {Subscription.Status.DRAFT, Subscription.Status.QUOTATION}:
+                raise serializers.ValidationError({"lines": "Lines can only be replaced while a subscription is Draft or Quotation."})
+            if not lines:
+                raise serializers.ValidationError({"lines": "A subscription must contain at least one line."})
+        for line in lines or []:
             if plan and line["quantity"] < plan.minimum_quantity:
                 raise serializers.ValidationError({"lines": "A line quantity is below the plan minimum quantity."})
         return attrs
@@ -66,6 +74,21 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             line.full_clean()
             line.save()
         return subscription
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines = validated_data.pop("lines", None)
+        for attribute, value in validated_data.items():
+            setattr(instance, attribute, value)
+        instance.full_clean()
+        instance.save()
+        if lines is not None:
+            instance.lines.all().delete()
+            for line_data in lines:
+                line = SubscriptionLine(subscription=instance, **line_data)
+                line.full_clean()
+                line.save()
+        return instance
 
 
 class TemplateLineSerializer(serializers.ModelSerializer):
@@ -83,7 +106,7 @@ class TemplateLineSerializer(serializers.ModelSerializer):
 
 
 class QuotationTemplateSerializer(serializers.ModelSerializer):
-    lines = TemplateLineSerializer(many=True)
+    lines = TemplateLineSerializer(many=True, required=False)
     class Meta:
         model = QuotationTemplate
         fields = ("id", "name", "plan", "validity_days", "is_active", "lines", "created_at")
@@ -91,7 +114,12 @@ class QuotationTemplateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         plan = attrs.get("plan", getattr(self.instance, "plan", None))
-        for line in attrs.get("lines", []):
+        lines = attrs.get("lines")
+        if not self.instance and not lines:
+            raise serializers.ValidationError({"lines": "Provide at least one template line."})
+        if self.instance and lines is not None and not lines:
+            raise serializers.ValidationError({"lines": "A quotation template must contain at least one line."})
+        for line in lines or []:
             if line["quantity"] < plan.minimum_quantity:
                 raise serializers.ValidationError({"lines": "A line quantity is below the plan minimum quantity."})
         return attrs
@@ -103,6 +131,21 @@ class QuotationTemplateSerializer(serializers.ModelSerializer):
         for line_data in lines:
             QuotationTemplateLine.objects.create(template=template, **line_data)
         return template
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines = validated_data.pop("lines", None)
+        for attribute, value in validated_data.items():
+            setattr(instance, attribute, value)
+        instance.full_clean()
+        instance.save()
+        if lines is not None:
+            instance.lines.all().delete()
+            for line_data in lines:
+                line = QuotationTemplateLine(template=instance, **line_data)
+                line.full_clean()
+                line.save()
+        return instance
 
 
 class QuotationLineSerializer(PriceLineSerializer):
@@ -127,6 +170,12 @@ class QuotationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         template = attrs.get("template")
         lines = attrs.get("lines")
+        if self.instance and template:
+            raise serializers.ValidationError({"template": "Templates can only be used when creating a quotation."})
+        if self.instance and self.instance.status == Quotation.Status.CONVERTED and lines is not None:
+            raise serializers.ValidationError({"lines": "Converted quotations cannot be changed."})
+        if self.instance and lines is not None and not lines:
+            raise serializers.ValidationError({"lines": "A quotation must contain at least one line."})
         if template and "plan" in attrs and attrs["plan"] != template.plan:
             raise serializers.ValidationError({"plan": "Must match the selected template plan."})
         if not template and not lines and not self.instance:
@@ -161,6 +210,21 @@ class QuotationSerializer(serializers.ModelSerializer):
         for line_data in lines or []:
             QuotationLine.objects.create(quotation=quotation, **line_data)
         return quotation
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines = validated_data.pop("lines", None)
+        validated_data.pop("template", None)
+        for attribute, value in validated_data.items():
+            setattr(instance, attribute, value)
+        instance.full_clean()
+        instance.save()
+        if lines is not None:
+            instance.lines.all().delete()
+            for line_data in lines:
+                line = QuotationLine(quotation=instance, **line_data)
+                line.save()
+        return instance
 
 
 class SubscriptionTransitionSerializer(serializers.Serializer):
