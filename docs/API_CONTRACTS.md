@@ -135,4 +135,57 @@ Nested `lines` supplied to `PATCH` for subscriptions, quotation templates, or qu
 
 ## Current scope and coordination
 
-The subscription, quotation and recurring-invoice foundation is implemented. Sabareesh owns payment recording, discount-rule behavior, and portal API behavior; no payment or discount endpoint has been duplicated here. Arya should use only documented endpoints and fields. Hawin can use the workflow tests as baseline QA scenarios: create template/quotation, convert once, activate, generate invoice, retry generation, and verify customer isolation.
+The subscription, quotation and recurring-invoice foundation is implemented. The following payment, discount, portal and reporting additions are owned by Sabareesh. Arya should use only documented endpoints and fields.
+
+## Payments
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/payments/` | Authenticated | Admin/Staff see all; customer sees only own invoice payments |
+| `POST` | `/payments/` | Admin/Staff | Record a payment against a confirmed invoice |
+| `GET` | `/payments/{id}/` | Owner/Admin/Staff | Payment detail |
+
+Create a payment:
+
+```json
+{"invoice":12,"method":"UPI","amount":"500.00","payment_date":"2026-11-01","note":"Received at counter","external_reference":"upi-transaction-id"}
+```
+
+`method` is one of `CASH`, `CARD`, `BANK_TRANSFER`, `UPI`, or `OTHER`. Amounts are Decimal strings, must be positive, and cannot exceed the current invoice `balance`. An optional `external_reference` is unique when supplied, preventing duplicate gateway/manual imports. Payments are append-only: multiple partial payments are supported. Each record locks the invoice, updates `amount_paid`, and changes status to `PAID` only once the total is fully settled. Invalid invoice state, excess amount, or duplicate reference returns `400`.
+
+## Discounts
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET`, `POST` | `/discounts/` | Admin | List/create discount rules |
+| `GET`, `PATCH`, `DELETE` | `/discounts/{id}/` | Admin | Manage a rule |
+
+Example product-specific percentage rule:
+
+```json
+{"name":"Workspace launch","discount_type":"PERCENTAGE","value":"10.00","scope":"PRODUCT","products":[4],"minimum_purchase_amount":"100.00","minimum_quantity":1,"starts_on":"2026-11-01","ends_on":"2026-11-30","maximum_uses":100,"is_active":true}
+```
+
+Rules may be `FIXED` or `PERCENTAGE`; scope is `SUBSCRIPTION` or `PRODUCT`. Product rules require a non-empty `products` list. Rules are evaluated exactly once when a new invoice is generated, based on its issue date. Dates, amount/quantity thresholds, active state, and remaining `maximum_uses` are enforced under row locks; `DiscountApplication` records the rule and amount for auditability. Discount is capped at eligible subtotal and tax is recalculated after discount. Invoice responses now include `discount_total` and `discount_applications`.
+
+## Customer portal
+
+All portal endpoints require the `CUSTOMER` role. Every queryset is scoped to `request.user`; direct access to another customer’s object returns `404`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET`, `PATCH` | `/portal/profile/` | Current customer profile (email is read-only) |
+| `GET` | `/portal/subscriptions/`, `/portal/subscriptions/{id}/` | Own subscriptions and line/status data |
+| `GET` | `/portal/invoices/`, `/portal/invoices/{id}/` | Own invoices, discounts, totals and balance |
+| `GET` | `/portal/payments/` | Own payment history |
+| `GET` | `/portal/summary/` | Active subscription count, outstanding balance, paid and overdue counts |
+
+## Payment reporting
+
+`GET /reports/payment-summary/` is Admin/Staff-only and returns:
+
+```json
+{"received":"500.00","outstanding":"750.00","paid_invoice_count":1,"overdue_invoice_count":1,"discount_total":"30.00"}
+```
+
+This is a payment-focused reporting foundation for Aswin’s dashboard aggregation; it does not introduce a competing dashboard endpoint. Hawin QA scenarios: record partial then final payment, reject an overpayment, create a product discount and confirm tax-after-discount, retry billing without a second discount application, and test Customer A against Customer B portal URLs.

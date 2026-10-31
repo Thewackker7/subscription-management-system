@@ -63,6 +63,9 @@ def generate_invoice_for_subscription(subscription_id, as_of=None):
         tax_total += source.tax_amount
     invoice.subtotal, invoice.tax_total, invoice.total = money(subtotal), money(tax_total), money(subtotal + tax_total)
     invoice.save(update_fields=["subtotal", "tax_total", "total"])
+    # Import here to avoid a billing/discount model import cycle during Django startup.
+    from apps.discounts.services import apply_eligible_discounts
+    invoice = apply_eligible_discounts(invoice.id, as_of)
     subscription.next_billing_date = period_end + timedelta(days=1)
     subscription.save(update_fields=["next_billing_date", "updated_at"])
     if period_end >= subscription.expiry_date:

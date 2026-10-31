@@ -18,7 +18,7 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = InvoiceSerializer
 
     def get_queryset(self):
-        queryset = Invoice.objects.select_related("subscription", "customer").prefetch_related("lines__product", "lines__variant", "lines__tax_rule")
+        queryset = Invoice.objects.select_related("subscription", "customer").prefetch_related("lines__product", "lines__variant", "lines__tax_rule", "discount_applications__rule")
         if self.request.user.role == User.Role.CUSTOMER:
             return queryset.filter(customer=self.request.user)
         return queryset
